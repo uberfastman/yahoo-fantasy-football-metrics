@@ -6,7 +6,11 @@ import os
 from collections import defaultdict
 
 from calculate.coaching_efficiency import CoachingEfficiency
-from calculate.metrics import CalculateMetrics
+from calculate.luck import Luck
+from calculate.playoff_probabilities import PlayoffProbabilities
+from calculate.bad_boy_stats import BadBoyStats
+from calculate.beef_stats import BeefStats
+from calculate.metrics import Metrics, CalculateMetrics
 from calculate.points_by_position import PointsByPosition
 from calculate.season_averages import SeasonAverageCalculator
 from dao.base import BaseLeague
@@ -166,10 +170,14 @@ class FantasyFootballReport(object):
         while week_counter <= self.league.week_for_report:
 
             week_for_report = self.league.week_for_report
-            metrics_calculator = CalculateMetrics(self.config, self.league_id, self.league.num_playoff_slots,
-                                                  self.playoff_prob_sims)
 
-            custom_weekly_matchups = self.league.get_custom_weekly_matchups(str(week_counter))
+            metrics = Metrics(week_counter, self.config, self.league, self.playoff_prob_sims, self.bad_boy_stats,
+                              self.beef_stats)
+
+            # calculator = CalculateMetrics(self.config, self.league_id, self.league.num_playoff_slots,
+            #                            self.playoff_prob_sims)
+
+            # custom_weekly_matchups = self.league.get_custom_weekly_matchups(str(week_counter))
 
             report_data = ReportData(
                 config=self.config,
@@ -177,23 +185,20 @@ class FantasyFootballReport(object):
                 season_weekly_teams_results=season_weekly_teams_results,
                 week_counter=str(week_counter),
                 week_for_report=week_for_report,
-                metrics_calculator=metrics_calculator,
-                metrics={
-                    "coaching_efficiency": CoachingEfficiency(self.config, self.league.get_roster_slots_by_type()),
-                    "luck": metrics_calculator.calculate_luck(
-                        self.league.teams_by_week.get(str(week_counter)),
-                        custom_weekly_matchups
-                    ),
-                    "records": metrics_calculator.calculate_records(
-                        week_counter,
-                        self.league,
-                        self.league.standings if self.league.standings else self.league.current_standings,
-                        custom_weekly_matchups
-                    ),
-                    "playoff_probs": self.playoff_probs,
-                    "bad_boy_stats": self.bad_boy_stats,
-                    "beef_stats": self.beef_stats
-                },
+                metrics=metrics,
+                # records=calculator.calculate_records(
+                #     week_counter,
+                #     self.league,
+                #     self.league.standings if self.league.standings else self.league.current_standings,
+                #     custom_weekly_matchups
+                # ),
+                # metric_coaching_efficiency=CoachingEfficiency(
+                #     self.config, self.league.get_roster_slots_by_type()),  # type: CoachingEfficiency
+                # metric_luck=Luck(
+                #         self.league.teams_by_week.get(str(week_counter)), custom_weekly_matchups),  # type: Luck
+                # metric_playoff_probabilities=self.playoff_probs,  # type: PlayoffProbabilities
+                # metric_bad_boy_stats=self.bad_boy_stats,  # type: BadBoyStats
+                # metric_beef_stats=self.beef_stats,  # type: BeefStats
                 break_ties=self.break_ties,
                 dq_ce=self.dq_ce,
                 testing=self.test

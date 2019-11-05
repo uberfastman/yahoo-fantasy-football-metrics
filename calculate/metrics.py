@@ -5,6 +5,14 @@ import itertools
 import logging
 from collections import defaultdict, OrderedDict
 from statistics import mean
+from calculate.coaching_efficiency import CoachingEfficiency
+from calculate.luck import Luck
+from calculate.playoff_probabilities import PlayoffProbabilities
+from calculate.bad_boy_stats import BadBoyStats
+from calculate.beef_stats import BeefStats
+from configparser import ConfigParser
+from calculate.points_by_position import PointsByPosition
+from calculate.season_averages import SeasonAverageCalculator
 
 import numpy as np
 
@@ -13,13 +21,55 @@ from dao.base import BaseLeague, BaseTeam, BaseRecord, BasePlayer
 logger = logging.getLogger(__name__)
 
 
-class CalculateMetrics(object):
-    def __init__(self, config, league_id, playoff_slots, playoff_simulations):
+class Metrics(object):
+
+    def __init__(self, week_counter, week_for_report, config: ConfigParser, league: BaseLeague, playoff_probs_sims, bad_boy_stats,
+                 beef_stats):
+        self.week_counter = week_counter
+        self.week_for_report = week_for_report
         self.config = config
-        self.league_id = league_id
-        self.playoff_slots = playoff_slots
-        self.playoff_simulations = playoff_simulations
-        self.coaching_efficiency_dq_count = 0
+        self.league = league
+
+        self.playoff_probs_sims = playoff_probs_sims
+        self.playoff_probs = self._calculate_playoff_probs()
+
+        self.records = self.calculate_records(
+            self.week,
+            self.league,
+            self.league.standings if self.league.standings else self.league.current_standings,
+            self.league.get_custom_weekly_matchups(str(self.week))
+        )  # type: dict
+        self.coaching_efficiency = CoachingEfficiency(
+            self.config, self.league.get_roster_slots_by_type())  # type: CoachingEfficiency
+        self.luck = Luck(
+            self.league.teams_by_week.get(str(self.week)),
+            self.league.get_custom_weekly_matchups(str(self.week))
+        ).calculate()  # type: dict
+        self.bad_boy_stats = bad_boy_stats  # type: BadBoyStats
+        self.beef_stats = beef_stats  # type: BeefStats
+
+    def _calculate_playoff_probs(self):
+        return self.league.get_playoff_probs(
+            self.league.save_data,
+            self.playoff_probs_sims,
+            self.league.dev_offline,
+            recalculate=True
+        ).calculate(self.week_counter, self.week_for_report, standings, remaining_matchups)
+
+
+    def get_bad_boy_rankings(self) -> BadBoyStats:
+        return self.bad_boy_stats
+
+    def get_beef_rankings(self) -> BeefStats:
+        return self.beef_stats
+
+    # class CalculateMetrics(object):
+    #     def __init__(self, config, league_id, playoff_slots, playoff_simulations):
+    #         pass
+        # self.config = config
+        # self.league_id = league_id
+        # self.playoff_slots = playoff_slots
+        # self.playoff_simulations = playoff_simulations
 
     @staticmethod
     def decode_byte_string(string):
@@ -112,8 +162,10 @@ class CalculateMetrics(object):
 
         return score_results_data
 
-    def get_coaching_efficiency_data(self, coaching_efficiency_results):
+    @staticmethod
+    def get_coaching_efficiency_data(coaching_efficiency_results):
         coaching_efficiency_results_data = []
+        coaching_efficiency_dq_count = 0
         place = 1
         for team in coaching_efficiency_results:  # type: BaseTeam
             ranked_team_name = team.name
@@ -121,7 +173,7 @@ class CalculateMetrics(object):
             ranked_coaching_efficiency = team.coaching_efficiency
 
             if ranked_coaching_efficiency == "DQ":
-                self.coaching_efficiency_dq_count += 1
+                coaching_efficiency_dq_count += 1
             else:
                 ranked_coaching_efficiency = "%.2f%%" % float(ranked_coaching_efficiency)
 
@@ -130,7 +182,7 @@ class CalculateMetrics(object):
 
             place += 1
 
-        return coaching_efficiency_results_data
+        return coaching_efficiency_results_data, coaching_efficiency_dq_count
 
     @staticmethod
     def get_luck_data(luck_results):
@@ -499,49 +551,49 @@ class CalculateMetrics(object):
         league.records_by_week[str(week)] = ordered_records
         return records
 
-    @staticmethod
-    def calculate_luck(teams, matchups_list):
-        luck_results = defaultdict(defaultdict)
-        matchups = {
-            str(team_id): value[
-                "result"] for pair in matchups_list for team_id, value in list(pair.items())
-        }
-
-        for team_1 in teams.values():  # type: BaseTeam
-            luck_record = BaseRecord()
-
-            for team_2 in teams.values():
-                if team_1.team_id == team_2.team_id:
-                    continue
-                score_1 = team_1.points
-                score_2 = team_2.points
-
-                if float(score_1) > float(score_2):
-                    luck_record.add_win()
-                elif float(score_1) < float(score_2):
-                    luck_record.add_loss()
-                else:
-                    luck_record.add_tie()
-
-            luck_results[team_1.team_id]["luck_record"] = luck_record
-
-            # calc luck %
-            # TODO: assuming no ties...  how are tiebreakers handled?
-            luck = 0.0
-            # number of teams excluding current team
-            num_teams = float(len(teams)) - 1
-
-            if luck_record.get_wins() != 0 and luck_record.get_losses() != 0:
-                matchup_result = matchups[str(team_1.team_id)]
-                if matchup_result == "W" or matchup_result == "T":
-                    luck = (luck_record.get_losses() + luck_record.get_ties()) / num_teams
-                else:
-                    luck = 0 - (luck_record.get_wins() + luck_record.get_ties()) / num_teams
-
-            # noinspection PyTypeChecker
-            luck_results[team_1.team_id]["luck"] = luck * 100
-
-        return luck_results
+    # @staticmethod
+    # def calculate_luck(teams, matchups_list):
+    #     luck_results = defaultdict(defaultdict)
+    #     matchups = {
+    #         str(team_id): value[
+    #             "result"] for pair in matchups_list for team_id, value in list(pair.items())
+    #     }
+    #
+    #     for team_1 in teams.values():  # type: BaseTeam
+    #         luck_record = BaseRecord()
+    #
+    #         for team_2 in teams.values():
+    #             if team_1.team_id == team_2.team_id:
+    #                 continue
+    #             score_1 = team_1.points
+    #             score_2 = team_2.points
+    #
+    #             if float(score_1) > float(score_2):
+    #                 luck_record.add_win()
+    #             elif float(score_1) < float(score_2):
+    #                 luck_record.add_loss()
+    #             else:
+    #                 luck_record.add_tie()
+    #
+    #         luck_results[team_1.team_id]["luck_record"] = luck_record
+    #
+    #         # calc luck %
+    #         # TODO: assuming no ties...  how are tiebreakers handled?
+    #         luck = 0.0
+    #         # number of teams excluding current team
+    #         num_teams = float(len(teams)) - 1
+    #
+    #         if luck_record.get_wins() != 0 and luck_record.get_losses() != 0:
+    #             matchup_result = matchups[str(team_1.team_id)]
+    #             if matchup_result == "W" or matchup_result == "T":
+    #                 luck = (luck_record.get_losses() + luck_record.get_ties()) / num_teams
+    #             else:
+    #                 luck = 0 - (luck_record.get_wins() + luck_record.get_ties()) / num_teams
+    #
+    #         # noinspection PyTypeChecker
+    #         luck_results[team_1.team_id]["luck"] = luck * 100
+    #
+    #     return luck_results
 
     @staticmethod
     def get_ranks_for_metric(data_for_metric, power_ranked_teams, metric_ranking_key):

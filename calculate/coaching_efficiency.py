@@ -97,8 +97,8 @@ class CoachingEfficiency(object):
     def is_player_eligible(self, player, week, inactives):
         return player.status in self.inactive_statuses or player.bye_week == week or player.full_name in inactives
 
-    def execute_coaching_efficiency(self, team_name, team_roster, team_points, positions_filled_active, week,
-                                    inactive_players, dq_eligible=False):
+    def calculate_for_team(self, team_name, team_roster, team_points, positions_filled_active, week, inactive_players,
+                           dq_eligible=False):
 
         # TODO: move this to config?
         bench_slot_names = ["BN", "BE"]

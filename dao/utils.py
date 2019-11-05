@@ -11,6 +11,8 @@ from urllib3 import connectionpool, poolmanager
 
 from calculate.bad_boy_stats import BadBoyStats
 from calculate.beef_stats import BeefStats
+from calculate.metrics import Metrics
+from calculate.coaching_efficiency import CoachingEfficiency
 from dao.base import BaseLeague, BaseTeam, BasePlayer
 from dao.espn import LeagueData as EspnLeagueData
 from dao.fleaflicker import LeagueData as FleaflickerLeagueData
@@ -132,9 +134,7 @@ def league_data_factory(week_for_report, platform, league_id, game_id, season, c
         sys.exit("...run aborted.")
 
 
-def add_report_player_stats(player,  # type: BasePlayer
-                            bench_positions,
-                            metrics):
+def add_report_player_stats(player: BasePlayer, bench_positions, bad_boy_stats: BadBoyStats, beef_stats: BeefStats):
     player.bad_boy_crime = str()
     player.bad_boy_points = int()
     player.bad_boy_num_offenders = int()
@@ -142,7 +142,6 @@ def add_report_player_stats(player,  # type: BasePlayer
     player.tabbu = float()
 
     if player.selected_position not in bench_positions:
-        bad_boy_stats = metrics.get("bad_boy_stats")  # type: BadBoyStats
         player.bad_boy_crime = bad_boy_stats.get_player_bad_boy_crime(
             player.full_name, player.nfl_team_abbr, player.primary_position)
         player.bad_boy_points = bad_boy_stats.get_player_bad_boy_points(
@@ -150,20 +149,18 @@ def add_report_player_stats(player,  # type: BasePlayer
         player.bad_boy_num_offenders = bad_boy_stats.get_player_bad_boy_num_offenders(
             player.full_name, player.nfl_team_abbr, player.primary_position)
 
-        beef_stats = metrics.get("beef_stats")  # type: BeefStats
         player.weight = beef_stats.get_player_weight(player.first_name, player.last_name, player.nfl_team_abbr)
         player.tabbu = beef_stats.get_player_tabbu(player.first_name, player.last_name, player.nfl_team_abbr)
 
     return player
 
 
-def add_report_team_stats(team: BaseTeam, league: BaseLeague, week_counter, metrics_calculator, metrics, dq_ce,
-                          inactive_players):
-    team.name = metrics_calculator.decode_byte_string(team.name)
+def add_report_team_stats(team: BaseTeam, league: BaseLeague, week_counter, metrics: Metrics, dq_ce, inactive_players):
+    team.name = metrics.decode_byte_string(team.name)
     bench_positions = league.get_roster_slots_by_type().get("positions_bench")
 
     for player in team.roster:
-        add_report_player_stats(player, bench_positions, metrics)
+        add_report_player_stats(player, bench_positions, metrics.get_bad_boy_rankings(), metrics.get_beef_rankings())
 
     starting_lineup_points = round(
         sum([p.points for p in team.roster if p.selected_position not in bench_positions]), 2)
@@ -197,7 +194,7 @@ def add_report_team_stats(team: BaseTeam, league: BaseLeague, week_counter, metr
                                     p.selected_position not in bench_positions]
 
     # calculate coaching efficiency
-    team.coaching_efficiency = metrics.get("coaching_efficiency").execute_coaching_efficiency(
+    team.coaching_efficiency = metrics.get_coaching_efficiency().calculate_for_team(
         team.name,
         team.roster,
         team.points,
@@ -208,8 +205,8 @@ def add_report_team_stats(team: BaseTeam, league: BaseLeague, week_counter, metr
     )
 
     # # retrieve luck and record
-    team.luck = metrics.get("luck").get(team.team_id).get("luck")
-    team.record = metrics.get("records").get(team.team_id)
+    team.luck = metrics.get_luck().get(team.team_id).get("luck")
+    team.record = metrics.get_records().get(team.team_id)
 
     return team
 
